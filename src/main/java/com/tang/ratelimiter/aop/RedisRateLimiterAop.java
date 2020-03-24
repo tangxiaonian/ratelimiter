@@ -1,20 +1,28 @@
 package com.tang.ratelimiter.aop;
 
-import com.tang.ratelimiter.annotation.RateLimiter;
+import com.google.common.collect.Lists;
+import com.tang.ratelimiter.annotation.RedisRateLimiter;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
-import org.aspectj.lang.annotation.Before;
+import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Pointcut;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.scripting.support.ResourceScriptSource;
+import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+import javax.annotation.PostConstruct;
+import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.util.concurrent.TimeUnit;
+import java.util.Arrays;
 
 /**
  * @Classname RateLimiterAop
@@ -24,23 +32,17 @@ import java.util.concurrent.TimeUnit;
  * @Created by ASUS
  */
 @Slf4j
-//@Aspect
-//@Component
-public class RateLimiterAop {
+@Aspect
+@Component
+public class RedisRateLimiterAop {
 
-    private com.google.common.util.concurrent.RateLimiter rateLimiter =
-            com.google.common.util.concurrent.RateLimiter.create(5);
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
+    private DefaultRedisScript<Number> defaultRedisScript = null;
 
     @Pointcut("execution(* com.tang.ratelimiter.controller..*.*(..))")
     public void pointcut() {}
-
-    /**
-     * 方法执行前
-     */
-    @Before(value = "pointcut()")
-    public void beforeMethod() {
-
-    }
 
     @Around("pointcut()")
     public Object aroundMethod(JoinPoint joinPoint) {
@@ -52,37 +54,41 @@ public class RateLimiterAop {
         // 获取方法签名
         MethodSignature methodSignature = (MethodSignature)joinPoint.getSignature();
         // 获取方法上的注解
-        RateLimiter annotation = methodSignature.getMethod().getAnnotation(RateLimiter.class);
+        RedisRateLimiter annotation = methodSignature.getMethod().getAnnotation(RedisRateLimiter.class);
 
         log.info("切入点执行{}类....",aClass.getName());
 
         // 方法是否需要限流
         if (annotation != null) {
 
-            log.info("{}方法需要限流...\n",aClass.getName());
+            log.info("{}方法需要限流...",aClass.getName());
 
-            double rate = annotation.rate();
+            Integer value = annotation.value();
 
-            long timeout = annotation.timeout();
 
-            this.rateLimiter.setRate(rate);
-            // 令牌获取成功
-            if (this.rateLimiter.tryAcquire(timeout, TimeUnit.MICROSECONDS)) {
+            String key = "redis:limiter:" + (System.currentTimeMillis() / 1000);
+
+            //  原子操作:  执行lua脚本   返回脚本结果                            传入脚本的 key  , value
+            Number number = stringRedisTemplate.execute(this.defaultRedisScript, Lists.newArrayList(key), value + "");
+
+            if (number != null && number.intValue() != 0) {
+
+                log.info("限流时间段内访问第:{}次",number);
 
                 flage = true;
 
             }else {
 
-                log.info("{}方法熔断...\n",joinPoint.getSignature().getName());
+                log.info("限流次数已到达,对{}方法进行熔断...",aClass.getName());
 
-                // 令牌获取失败
-                this.fallbackMethod();
-
+                fallbackMethod();
             }
 
         }else {
+
             flage = true;
-            log.info("{}方法不需要限流...\n",joinPoint.getSignature().getName());
+
+            log.info("{}方法不需要限流...",joinPoint.getSignature().getName());
         }
 
         if (flage) {
@@ -98,6 +104,19 @@ public class RateLimiterAop {
 
         }
         return null;
+    }
+
+    @PostConstruct
+    public void init() {
+
+        DefaultRedisScript<Number> redisScript = new DefaultRedisScript<>();
+
+        //读取 lua 脚本
+        redisScript.setScriptSource(new ResourceScriptSource(new ClassPathResource("ratelimiter.lua")));
+        // 返回结果类型
+        redisScript.setResultType(Number.class);
+
+        this.defaultRedisScript = redisScript;
     }
 
     /**

@@ -2,6 +2,7 @@ package com.tang.ratelimiter.controller;
 
 import com.tang.ratelimiter.annotation.AccessLimit;
 import com.tang.ratelimiter.annotation.RateLimiter;
+import com.tang.ratelimiter.annotation.RedisRateLimiter;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -42,5 +43,16 @@ public class RateLimiterController {
 
         return "拿到数据了...";
     }
+
+
+    @RedisRateLimiter(value = 5)
+    @GetMapping("/limiterV3")
+    public String testRateLimiterV3() {
+
+        System.out.println("走业务逻辑...");
+
+        return "拿到数据了...";
+    }
+
 
 }

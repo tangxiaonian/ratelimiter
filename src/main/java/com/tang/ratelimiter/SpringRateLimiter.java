@@ -11,7 +11,7 @@ import org.springframework.context.annotation.EnableAspectJAutoProxy;
  * @Date 2020/3/22 19:20
  * @Created by ASUS
  */
-//@EnableAspectJAutoProxy
+@EnableAspectJAutoProxy
 @SpringBootApplication
 public class SpringRateLimiter {
 

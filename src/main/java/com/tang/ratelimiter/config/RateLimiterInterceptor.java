@@ -31,12 +31,10 @@ public class RateLimiterInterceptor implements HandlerInterceptor {
     private StringRedisTemplate stringRedisTemplate;
 
     // 是否向下执行
-    private static Boolean result = false;
+    private static Boolean result = true;
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-
-        System.out.println( "同一主机多次请求,尝试限流..." );
 
         // 是不是执行controller的方法
         if (handler instanceof HandlerMethod) {
@@ -47,6 +45,8 @@ public class RateLimiterInterceptor implements HandlerInterceptor {
 
             annotation.ifPresent((item) -> {
 
+                System.out.println( "同一主机多次请求,尝试限流..." );
+
                 ValueOperations<String, String> stringValueOperations = stringRedisTemplate.opsForValue();
 
                 double limit = item.limit();
@@ -54,7 +54,7 @@ public class RateLimiterInterceptor implements HandlerInterceptor {
                 long sec = item.sec();
 
                 // 获取IP
-                String remoteIp = IPUtils.getRemoteIp(request);
+                String remoteIp = IPUtils.getIpAddr(request);
 
                 // IP + 请求路径
                 String key = remoteIp + request.getRequestURI();
